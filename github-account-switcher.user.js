@@ -1,7 +1,13 @@
 // ==UserScript==
 // @name         GitHub Account Switcher
 // @namespace    https://github.com/mxttbennett
-// @version      1.0.0
+// @version      1.0.1
+// @author       mxttbennett
+// @license      MIT
+// @homepageURL  https://github.com/mxttbennett/gh-monkey
+// @supportURL   https://github.com/mxttbennett/gh-monkey/issues
+// @downloadURL  https://raw.githubusercontent.com/mxttbennett/gh-monkey/main/github-account-switcher.user.js
+// @updateURL    https://raw.githubusercontent.com/mxttbennett/gh-monkey/main/github-account-switcher.user.js
 // @description  Automatically switches GitHub accounts based on configurable URL rules
 // @match        https://github.com/*
 // @run-at       document-idle
