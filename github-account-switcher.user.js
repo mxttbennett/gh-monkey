@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Account Switcher
 // @namespace    https://github.com/mxttbennett
-// @version      1.0.1
+// @version      1.1.0
 // @author       mxttbennett
 // @license      MIT
 // @homepageURL  https://github.com/mxttbennett/gh-monkey
@@ -20,14 +20,7 @@
 (async () => {
   const COOLDOWN_MS = 5000;
   const SWITCH_ATTEMPT_TTL_MS = 60000;
-  const DEFAULT_SETTINGS = {
-    defaultAccount: "mxttbennett",
-    rules: [
-      { type: "org", value: "EnterBridge-Technologies", account: "mattbennett-ebt" },
-      { type: "regex", value: "mxttbennett", account: "mxttbennett" },
-      { type: "regex", value: "mattbennett-ebt", account: "mattbennett-ebt" },
-    ],
-  };
+  const DEFAULT_SETTINGS = { defaultAccount: null, rules: [] };
   const RULE_TYPES = ["org", "page_id", "path_prefix", "regex"];
   const AUTH_SEGMENTS = new Set([
     "login", "logout", "signup", "sessions", "password_reset",
@@ -70,6 +63,9 @@
     const data = await res.json();
     return data.stashedAccounts || [];
   }
+
+  let stashedAccounts;
+  const getStashedAccounts = () => (stashedAccounts ??= fetchStashedAccounts().catch(() => []));
 
   async function switchToSession(sessionId) {
     const nonce = meta("fetch-nonce");
@@ -179,9 +175,11 @@
     if (await switchToSession(account.userSessionId)) location.reload();
   }
 
-  function openSettings() {
+  async function openSettings({ firstRun = false } = {}) {
     if (document.getElementById("gh-switcher-settings")) return;
     const { rules, defaultAccount } = loadSettings();
+    const logins = (await getStashedAccounts()).map((a) => a.login);
+    const signedIn = [meta("user-login"), ...logins].filter(Boolean);
 
     const host = document.createElement("div");
     host.id = "gh-switcher-settings";
@@ -190,27 +188,46 @@
     root.innerHTML = `
       <style>
         :host { all: initial }
-        .card { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff; color: #1f2328; border: 1px solid #d1d9e0; border-radius: 8px; padding: 24px; width: min(680px, 92vw); max-height: 85vh; overflow: auto }
-        @media (prefers-color-scheme: dark) { .card { background: #0d1117; color: #e6edf3; border-color: #30363d } input, select { background: #0d1117 !important; color: #e6edf3 !important; border-color: #30363d !important } }
-        h1 { font-size: 20px; margin: 0 0 16px }
+        .card { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff; color: #1f2328; border: 1px solid #d1d9e0; border-radius: 8px; padding: 24px; width: min(720px, 92vw); max-height: 85vh; overflow: auto }
+        @media (prefers-color-scheme: dark) { .card { background: #0d1117; color: #e6edf3; border-color: #30363d } input, select { background: #0d1117 !important; color: #e6edf3 !important; border-color: #30363d !important } code { background: #161b22 !important } }
+        h1 { font-size: 20px; margin: 0 0 8px }
+        p { margin: 0 0 12px; color: #656d76; line-height: 1.5 }
         label { display: block; font-size: 12px; color: #656d76; margin: 12px 0 4px }
         input, select { font: inherit; padding: 6px 10px; border: 1px solid #d1d9e0; border-radius: 6px; width: 100%; box-sizing: border-box; background: #fff; color: #1f2328 }
         .row { display: grid; grid-template-columns: 130px 1fr 1fr 32px; gap: 8px; margin-bottom: 8px }
         button { font: inherit; padding: 6px 14px; border: 1px solid #d1d9e0; border-radius: 6px; cursor: pointer; background: transparent; color: inherit }
         button.primary { background: #1a7f37; border-color: #1a7f37; color: #fff }
         .actions { display: flex; gap: 8px; margin-top: 16px }
+        details { margin-top: 16px; color: #656d76 }
+        summary { cursor: pointer }
+        ul { padding-left: 20px; line-height: 1.6 }
+        code { background: #f6f8fa; padding: 1px 5px; border-radius: 4px }
       </style>
       <div class="card" role="dialog" aria-label="GitHub Account Switcher settings">
-        <h1>GitHub Account Switcher</h1>
-        <label>Default account (fallback when no rule matches)</label>
-        <input id="default" autocomplete="off">
-        <label>Rules (first match wins)</label>
+        <h1>${firstRun ? "Set up GitHub Account Switcher" : "GitHub Account Switcher"}</h1>
+        <p>${firstRun
+          ? "Nothing switches until you add rules. Pick which account each URL should use; you can reopen this any time from the Tampermonkey menu → <b>GitHub Account Switcher → Settings…</b>."
+          : "Rules are checked top to bottom; the first match wins."}</p>
+        <datalist id="logins">${signedIn.map((l) => `<option value="${l}">`).join("")}</datalist>
+        <label>Default account (used for repo pages no rule matches; leave blank to never switch by default)</label>
+        <input id="default" list="logins" autocomplete="off">
+        <label>Rules</label>
         <div id="rules"></div>
         <div class="actions">
           <button id="add">Add rule</button>
           <button id="save" class="primary">Save</button>
-          <button id="cancel">Cancel</button>
+          <button id="cancel">${firstRun ? "Skip for now" : "Cancel"}</button>
         </div>
+        <details${firstRun ? " open" : ""}>
+          <summary>How rules work</summary>
+          <ul>
+            <li><code>org</code> — the owner in the URL: <code>my-company</code> matches <code>github.com/my-company/…</code> and <code>/orgs/my-company/…</code></li>
+            <li><code>path_prefix</code> — URL path starts with the value, e.g. <code>/my-company/private-repo</code></li>
+            <li><code>page_id</code> — matches the <code>?page_id=</code> query parameter</li>
+            <li><code>regex</code> — tested against the full URL, e.g. <code>my-company|other-org</code></li>
+          </ul>
+          <p>Accounts must already be signed in to GitHub (account menu → Add account). Typing a login suggests the ones that are.</p>
+        </details>
       </div>`;
 
     const rulesEl = root.getElementById("rules");
@@ -221,6 +238,7 @@
       for (const t of RULE_TYPES) select.add(new Option(t, t, false, t === rule.type));
       const value = Object.assign(document.createElement("input"), { value: rule.value || "", placeholder: "Match value" });
       const account = Object.assign(document.createElement("input"), { value: rule.account || "", placeholder: "Account login" });
+      account.setAttribute("list", "logins");
       const del = Object.assign(document.createElement("button"), { textContent: "×", ariaLabel: "Delete rule" });
       del.onclick = () => row.remove();
       row.append(select, value, account, del);
@@ -229,6 +247,7 @@
 
     root.getElementById("default").value = defaultAccount || "";
     rules.forEach(addRow);
+    if (!rules.length) addRow({ type: "org" });
     root.getElementById("add").onclick = () => addRow({ type: "org" });
     root.getElementById("cancel").onclick = () => host.remove();
     host.addEventListener("keydown", (e) => e.key === "Escape" && host.remove());
@@ -240,15 +259,16 @@
       GM_setValue("rules", next.filter((r) => r.value && r.account));
       GM_setValue("defaultAccount", root.getElementById("default").value.trim() || null);
       host.remove();
+      checkAndSwitch();
     };
     document.body.append(host);
   }
 
-  GM_registerMenuCommand("Settings…", openSettings);
+  GM_registerMenuCommand("Settings…", () => openSettings());
 
   const current = meta("user-login");
   if (current) {
-    fetchStashedAccounts()
+    getStashedAccounts()
       .then((stashed) => {
         for (const a of stashed) {
           GM_registerMenuCommand(`Switch to ${a.login}`, async () => {
@@ -257,6 +277,11 @@
         }
       })
       .catch(() => {});
+  }
+
+  if (current && !GM_getValue("introShown", false)) {
+    GM_setValue("introShown", true);
+    openSettings({ firstRun: true });
   }
 
   await checkAndSwitch();
