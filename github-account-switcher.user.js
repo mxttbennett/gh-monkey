@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Account Switcher
 // @namespace    https://github.com/mxttbennett
-// @version      1.1.0
+// @version      1.1.1
 // @author       mxttbennett
 // @license      MIT
 // @homepageURL  https://github.com/mxttbennett/gh-monkey
@@ -251,6 +251,10 @@
     root.getElementById("add").onclick = () => addRow({ type: "org" });
     root.getElementById("cancel").onclick = () => host.remove();
     host.addEventListener("keydown", (e) => e.key === "Escape" && host.remove());
+    // GitHub's hotkeys listen on document and would otherwise act on keys typed here.
+    for (const type of ["keydown", "keypress", "keyup"]) {
+      host.addEventListener(type, (e) => e.stopPropagation());
+    }
     root.getElementById("save").onclick = () => {
       const next = [...rulesEl.children].map((row) => {
         const [select, value, account] = row.querySelectorAll("select, input");
@@ -262,6 +266,7 @@
       checkAndSwitch();
     };
     document.body.append(host);
+    rulesEl.querySelector("input")?.focus();
   }
 
   GM_registerMenuCommand("Settings…", () => openSettings());
