@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Account Switcher
 // @namespace    https://github.com/mxttbennett
-// @version      1.1.1
+// @version      1.1.2
 // @author       mxttbennett
 // @license      MIT
 // @homepageURL  https://github.com/mxttbennett/gh-monkey
@@ -183,12 +183,11 @@
 
     const host = document.createElement("div");
     host.id = "gh-switcher-settings";
-    host.style.cssText = "position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center";
     const root = host.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>
-        :host { all: initial }
-        .card { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff; color: #1f2328; border: 1px solid #d1d9e0; border-radius: 8px; padding: 24px; width: min(720px, 92vw); max-height: 85vh; overflow: auto }
+        .card { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff; color: #1f2328; border: 1px solid #d1d9e0; border-radius: 8px; padding: 24px; width: min(720px, 92vw); max-height: 85vh; overflow: auto; overscroll-behavior: contain; box-sizing: border-box }
+        .card::backdrop { background: rgba(0,0,0,.5) }
         @media (prefers-color-scheme: dark) { .card { background: #0d1117; color: #e6edf3; border-color: #30363d } input, select { background: #0d1117 !important; color: #e6edf3 !important; border-color: #30363d !important } code { background: #161b22 !important } }
         h1 { font-size: 20px; margin: 0 0 8px }
         p { margin: 0 0 12px; color: #656d76; line-height: 1.5 }
@@ -203,7 +202,7 @@
         ul { padding-left: 20px; line-height: 1.6 }
         code { background: #f6f8fa; padding: 1px 5px; border-radius: 4px }
       </style>
-      <div class="card" role="dialog" aria-label="GitHub Account Switcher settings">
+      <dialog class="card" aria-label="GitHub Account Switcher settings">
         <h1>${firstRun ? "Set up GitHub Account Switcher" : "GitHub Account Switcher"}</h1>
         <p>${firstRun
           ? "Nothing switches until you add rules. Pick which account each URL should use; you can reopen this any time from the Tampermonkey menu → <b>GitHub Account Switcher → Settings…</b>."
@@ -228,7 +227,7 @@
           </ul>
           <p>Accounts must already be signed in to GitHub (account menu → Add account). Typing a login suggests the ones that are.</p>
         </details>
-      </div>`;
+      </dialog>`;
 
     const rulesEl = root.getElementById("rules");
     const addRow = (rule) => {
@@ -249,8 +248,13 @@
     rules.forEach(addRow);
     if (!rules.length) addRow({ type: "org" });
     root.getElementById("add").onclick = () => addRow({ type: "org" });
-    root.getElementById("cancel").onclick = () => host.remove();
-    host.addEventListener("keydown", (e) => e.key === "Escape" && host.remove());
+    const dialog = root.querySelector("dialog");
+    const pageOverflow = document.documentElement.style.overflow;
+    dialog.addEventListener("close", () => {
+      host.remove();
+      document.documentElement.style.overflow = pageOverflow;
+    });
+    root.getElementById("cancel").onclick = () => dialog.close();
     // GitHub's hotkeys listen on document and would otherwise act on keys typed here.
     for (const type of ["keydown", "keypress", "keyup"]) {
       host.addEventListener(type, (e) => e.stopPropagation());
@@ -262,10 +266,12 @@
       });
       GM_setValue("rules", next.filter((r) => r.value && r.account));
       GM_setValue("defaultAccount", root.getElementById("default").value.trim() || null);
-      host.remove();
+      dialog.close();
       checkAndSwitch();
     };
     document.body.append(host);
+    document.documentElement.style.overflow = "hidden";
+    dialog.showModal();
     rulesEl.querySelector("input")?.focus();
   }
 
