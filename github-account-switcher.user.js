@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Account Switcher
 // @namespace    https://github.com/mxttbennett
-// @version      1.1.2
+// @version      1.1.3
 // @author       mxttbennett
 // @license      MIT
 // @homepageURL  https://github.com/mxttbennett/gh-monkey
@@ -20,6 +20,7 @@
 (async () => {
   const COOLDOWN_MS = 5000;
   const SWITCH_ATTEMPT_TTL_MS = 60000;
+  const ACCOUNT_CACHE_TTL_MS = 300000;
   const DEFAULT_SETTINGS = { defaultAccount: null, rules: [] };
   const RULE_TYPES = ["org", "page_id", "path_prefix", "regex"];
   const AUTH_SEGMENTS = new Set([
@@ -64,8 +65,21 @@
     return data.stashedAccounts || [];
   }
 
+  const readAccountCache = () => {
+    const cached = GM_getValue("stashedCache", null);
+    const fresh = cached && cached.for === meta("user-login") && Date.now() - cached.at < ACCOUNT_CACHE_TTL_MS;
+    return fresh ? cached.accounts : null;
+  };
+
   let stashedAccounts;
-  const getStashedAccounts = () => (stashedAccounts ??= fetchStashedAccounts().catch(() => []));
+  const getStashedAccounts = () =>
+    (stashedAccounts ??= (async () => {
+      const cached = readAccountCache();
+      if (cached) return cached;
+      const accounts = await fetchStashedAccounts().catch(() => []);
+      if (accounts.length) GM_setValue("stashedCache", { for: meta("user-login"), at: Date.now(), accounts });
+      return accounts;
+    })());
 
   async function switchToSession(sessionId) {
     const nonce = meta("fetch-nonce");
@@ -79,6 +93,7 @@
       body,
       credentials: "same-origin",
     });
+    if (res.ok) GM_setValue("stashedCache", null);
     return res.ok;
   }
 
@@ -167,8 +182,9 @@
     lastSwitchTime = Date.now();
     markAttempt(url, target);
 
-    const account = (await fetchStashedAccounts()).find((a) => a.login === target);
+    const account = (await getStashedAccounts()).find((a) => a.login === target);
     if (!account) {
+      GM_setValue("stashedCache", null);
       console.error(`[GH Switcher] "${target}" is not a stashed account`);
       return;
     }
@@ -297,14 +313,13 @@
 
   await checkAndSwitch();
 
-  document.addEventListener("turbo:render", checkAndSwitch);
-  document.addEventListener("turbo:load", checkAndSwitch);
-
   let lastUrl = location.href;
-  new MutationObserver(() => {
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
-      checkAndSwitch();
-    }
-  }).observe(document.head, { childList: true, subtree: true });
+  const onNavigate = () => {
+    if (location.href === lastUrl) return;
+    lastUrl = location.href;
+    checkAndSwitch();
+  };
+  document.addEventListener("turbo:render", onNavigate);
+  document.addEventListener("turbo:load", onNavigate);
+  new MutationObserver(onNavigate).observe(document.head, { childList: true, subtree: true });
 })();
