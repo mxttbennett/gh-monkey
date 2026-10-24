@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Account Switcher
 // @namespace    https://github.com/mxttbennett
-// @version      1.1.3
+// @version      1.2.0
 // @author       mxttbennett
 // @license      MIT
 // @homepageURL  https://github.com/mxttbennett/gh-monkey
@@ -42,6 +42,29 @@
     rules: GM_getValue("rules", DEFAULT_SETTINGS.rules),
     defaultAccount: GM_getValue("defaultAccount", DEFAULT_SETTINGS.defaultAccount),
   });
+
+  const saveSettings = ({ rules, defaultAccount }) => {
+    GM_setValue("rules", rules.filter((r) => r.value && r.account));
+    GM_setValue("defaultAccount", defaultAccount);
+  };
+
+  const parseSettings = (text) => {
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    const rulesValid = Array.isArray(data?.rules) && data.rules.every(
+      (r) => RULE_TYPES.includes(r?.type) && typeof r.value === "string" && typeof r.account === "string"
+    );
+    const defaultValid = data?.defaultAccount == null || typeof data.defaultAccount === "string";
+    if (!rulesValid || !defaultValid) return null;
+    return {
+      rules: data.rules.map(({ type, value, account }) => ({ type, value, account: account.trim() })),
+      defaultAccount: data.defaultAccount?.trim() || null,
+    };
+  };
 
   const meta = (name) =>
     document.querySelector(`meta[name="${name}"]`)?.getAttribute("content") ?? null;
@@ -204,7 +227,7 @@
       <style>
         .card { font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #fff; color: #1f2328; border: 1px solid #d1d9e0; border-radius: 8px; padding: 24px; width: min(720px, 92vw); max-height: 85vh; overflow: auto; overscroll-behavior: contain; box-sizing: border-box }
         .card::backdrop { background: rgba(0,0,0,.5) }
-        @media (prefers-color-scheme: dark) { .card { background: #0d1117; color: #e6edf3; border-color: #30363d } input, select { background: #0d1117 !important; color: #e6edf3 !important; border-color: #30363d !important } code { background: #161b22 !important } }
+        @media (prefers-color-scheme: dark) { .card { background: #0d1117; color: #e6edf3; border-color: #30363d } input, select { background: #0d1117 !important; color: #e6edf3 !important; border-color: #30363d !important } code { background: #161b22 !important } #status { color: #ff7b72 } }
         h1 { font-size: 20px; margin: 0 0 8px }
         p { margin: 0 0 12px; color: #656d76; line-height: 1.5 }
         label { display: block; font-size: 12px; color: #656d76; margin: 12px 0 4px }
@@ -217,6 +240,7 @@
         summary { cursor: pointer }
         ul { padding-left: 20px; line-height: 1.6 }
         code { background: #f6f8fa; padding: 1px 5px; border-radius: 4px }
+        #status { align-self: center; color: #cf222e; font-size: 13px }
       </style>
       <dialog class="card" aria-label="GitHub Account Switcher settings">
         <h1>${firstRun ? "Set up GitHub Account Switcher" : "GitHub Account Switcher"}</h1>
@@ -232,6 +256,12 @@
           <button id="add">Add rule</button>
           <button id="save" class="primary">Save</button>
           <button id="cancel">${firstRun ? "Skip for now" : "Cancel"}</button>
+        </div>
+        <div class="actions">
+          <button id="export">Export…</button>
+          <button id="import">Import…</button>
+          <input id="file" type="file" accept="application/json,.json" hidden>
+          <span id="status" role="alert"></span>
         </div>
         <details${firstRun ? " open" : ""}>
           <summary>How rules work</summary>
@@ -276,12 +306,37 @@
       host.addEventListener(type, (e) => e.stopPropagation());
     }
     root.getElementById("save").onclick = () => {
-      const next = [...rulesEl.children].map((row) => {
+      const rules = [...rulesEl.children].map((row) => {
         const [select, value, account] = row.querySelectorAll("select, input");
         return { type: select.value, value: value.value, account: account.value.trim() };
       });
-      GM_setValue("rules", next.filter((r) => r.value && r.account));
-      GM_setValue("defaultAccount", root.getElementById("default").value.trim() || null);
+      saveSettings({ rules, defaultAccount: root.getElementById("default").value.trim() || null });
+      dialog.close();
+      checkAndSwitch();
+    };
+    const statusEl = root.getElementById("status");
+    root.getElementById("export").onclick = () => {
+      const { rules, defaultAccount } = loadSettings();
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify({ rules, defaultAccount }, null, 2)], { type: "application/json" })
+      );
+      Object.assign(document.createElement("a"), { href: url, download: "gh-monkey-settings.json" }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    const fileInput = root.getElementById("file");
+    root.getElementById("import").onclick = () => fileInput.click();
+    fileInput.onchange = async () => {
+      const file = fileInput.files[0];
+      fileInput.value = "";
+      statusEl.textContent = "";
+      if (!file) return;
+      const settings = parseSettings(await file.text());
+      if (!settings) {
+        statusEl.textContent = "That file is not a GitHub Account Switcher settings export.";
+        return;
+      }
+      if (!confirm("Replace this profile's rules and default account with the ones in the file?")) return;
+      saveSettings(settings);
       dialog.close();
       checkAndSwitch();
     };
