@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Account Switcher
 // @namespace    https://github.com/mxttbennett
-// @version      1.2.0
+// @version      1.2.1
 // @author       mxttbennett
 // @license      MIT
 // @homepageURL  https://github.com/mxttbennett/gh-monkey
@@ -21,6 +21,7 @@
   const COOLDOWN_MS = 5000;
   const SWITCH_ATTEMPT_TTL_MS = 60000;
   const ACCOUNT_CACHE_TTL_MS = 300000;
+  const NOTICE_MS = 8000;
   const DEFAULT_SETTINGS = { defaultAccount: null, rules: [] };
   const RULE_TYPES = ["org", "page_id", "path_prefix", "regex"];
   const AUTH_SEGMENTS = new Set([
@@ -187,6 +188,22 @@
     sessionStorage.setItem("ghSwitcherAttempts", JSON.stringify(kept));
   }
 
+  function notify(message) {
+    document.getElementById("gh-switcher-notice")?.remove();
+    const host = document.createElement("div");
+    host.id = "gh-switcher-notice";
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = `
+      <style>
+        .notice { position: fixed; top: 16px; right: 16px; z-index: 2147483647; max-width: 360px; padding: 12px 16px; border: 1px solid #d1d9e0; border-radius: 8px; background: #fff; color: #1f2328; box-shadow: 0 8px 24px rgba(140,149,159,.2); font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif }
+        @media (prefers-color-scheme: dark) { .notice { background: #0d1117; color: #e6edf3; border-color: #30363d } }
+      </style>
+      <div class="notice" role="alert"></div>`;
+    root.querySelector(".notice").textContent = message;
+    document.body.append(host);
+    setTimeout(() => host.remove(), NOTICE_MS);
+  }
+
   async function checkAndSwitch() {
     if (Date.now() - lastSwitchTime < COOLDOWN_MS) return;
     const current = meta("user-login");
@@ -209,6 +226,7 @@
     if (!account) {
       GM_setValue("stashedCache", null);
       console.error(`[GH Switcher] "${target}" is not a stashed account`);
+      notify(`Couldn't switch to ${target}: you aren't signed in to that account in this browser profile.`);
       return;
     }
     if (await switchToSession(account.userSessionId)) location.reload();
