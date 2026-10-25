@@ -12,6 +12,8 @@ On the first GitHub page you open after installing, a setup dialog appears. Add 
 
 Reopen it any time from the Tampermonkey menu → **GitHub Account Switcher → Settings…** (the menu also lists **Switch to <login>** for each signed-in account).
 
+To copy your setup to a second browser profile, click **Export…** in Settings there, then **Import…** in the other profile and pick the file. Importing replaces that profile's rules and default account.
+
 Rules are checked top to bottom; the first match wins:
 
 | Type | Matches |
